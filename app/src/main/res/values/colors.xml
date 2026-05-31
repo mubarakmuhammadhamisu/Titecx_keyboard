@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Every color the keyboard uses lives here.
+    Changing a color here changes it everywhere automatically.
+-->
+<resources>
+    <!-- Background of the entire keyboard -->
+    <color name="keyboard_bg">#1C1C1E</color>
+
+    <!-- Normal key background -->
+    <color name="key_bg">#2C2C2E</color>
+
+    <!-- Key background when finger is pressing it -->
+    <color name="key_pressed">#4C4C4E</color>
+
+    <!-- Special keys like shift, delete, space -->
+    <color name="key_special">#3A3A3C</color>
+
+    <!-- Key label text -->
+    <color name="key_text">#FFFFFF</color>
+
+    <!-- Symbol row text (slightly dimmer) -->
+    <color name="key_symbol_text">#EBEBF5</color>
+</resources>

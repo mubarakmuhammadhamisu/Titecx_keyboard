@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:label="@string/app_name"
+        android:supportsRtl="true">
+
+        <!--
+            This is the most important part.
+            We register our keyboard as an InputMethodService.
+            Android reads this and shows our keyboard in the system keyboard list.
+        -->
+        <service
+            android:name=".GwaniIME"
+            android:label="@string/keyboard_name"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+
+            <!-- Tells Android this is a keyboard service -->
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+
+            <!-- Points to our keyboard settings file -->
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+
+        </service>
+
+    </application>
+
+</manifest>
