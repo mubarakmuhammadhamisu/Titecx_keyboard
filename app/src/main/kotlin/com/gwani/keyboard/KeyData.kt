@@ -46,9 +46,9 @@ object BaseLayer {
             Key(")", ")"), Key("?", "?"), Key("$", "$")
         ),
 
-        // Row 5 — bottom row: globe, spacebar, enter
+        // Row 5 — bottom row: numbers switch, spacebar, enter
         listOf(
-            Key("🌐", "switch", 1f),
+            Key("?123", "numbers", 1f),
             Key("", "space", 5f),
             Key("↩", "enter", 1.5f)
         )
