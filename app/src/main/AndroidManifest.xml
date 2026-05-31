@@ -13,7 +13,8 @@
         <service
             android:name=".GwaniIME"
             android:label="@string/keyboard_name"
-            android:permission="android.permission.BIND_INPUT_METHOD">
+            android:permission="android.permission.BIND_INPUT_METHOD" 
+            android:exported="true">
 
             <!-- Tells Android this is a keyboard service -->
             <intent-filter>
