@@ -1,0 +1,14 @@
+# Local machine SDK path - different on every computer, never push this
+local.properties
+
+# Built output files - no need to push these, GitHub builds them
+/build
+/app/build
+
+# Android Studio files - only useful if you use Android Studio
+*.iml
+.idea/
+.gradle/
+
+# Mac system files
+.DS_Store
