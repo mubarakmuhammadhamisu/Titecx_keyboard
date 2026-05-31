@@ -5,43 +5,47 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 
 // -----------------------------------------------------------
 // KEYBOARD VIEW
-// This file does two things only:
-//   1. Draw the keys on screen
-//   2. Respond to finger touches
+// Draws keys on screen and handles all touch interactions.
 // -----------------------------------------------------------
 
 class KeyboardView(context: Context) : View(context) {
 
-    // The IME service. We need this to actually type characters into apps.
-    // It is set after this view is created (see GwaniIME.kt)
     var ime: GwaniIME? = null
 
     // -----------------------------------------------------------
-    // PAINT OBJECTS
-    // Paint = a brush. Each brush has its own color and settings.
-    // We create them once here so we don't recreate them on every draw.
+    // PAINT OBJECTS — created once, reused every draw
     // -----------------------------------------------------------
 
-    // Brush for drawing normal key backgrounds
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2C2C2E")
     }
 
-    // Brush for drawing a key that is currently being pressed
     private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#4C4C4E")
     }
 
-    // Brush for writing text on keys
+    // Shift active = highlighted color so user knows shift is ON
+    private val shiftActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0A84FF")
+    }
+
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textSize = 44f
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 32f
         textAlign = Paint.Align.CENTER
     }
 
@@ -49,105 +53,107 @@ class KeyboardView(context: Context) : View(context) {
     // STATE
     // -----------------------------------------------------------
 
-    // Stores the rectangle (position + size) for every key.
-    // We calculate this once when the keyboard size is known.
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
-
-    // The key the finger is currently pressing (null if no finger on screen)
     private var pressedKey: Key? = null
+
+    // Tracks whether shift is currently ON
+    // When true, next letter typed will be uppercase, then shift turns off
+    private var isShifted = false
+
+    // -----------------------------------------------------------
+    // LONG PRESS BACKSPACE
+    // Handler runs on the main UI thread.
+    // When backspace is held, we post a repeating delete action
+    // every 50ms — same feel as Gboard continuous delete.
+    // -----------------------------------------------------------
+
+    private val handler = Handler(Looper.getMainLooper())
+    private var isLongPressing = false
+
+    // This Runnable deletes one character then reschedules itself every 50ms
+    private val deleteRunnable = object : Runnable {
+        override fun run() {
+            ime?.currentInputConnection?.deleteSurroundingText(1, 0)
+            handler.postDelayed(this, 50)
+        }
+    }
 
     // -----------------------------------------------------------
     // onMeasure
-    // Android calls this to ask: "how big do you want to be?"
-    // We answer with full screen width and exactly 5 rows × 52dp height.
-    // The IME framework then builds a window that exact size
-    // and docks it to the bottom of the screen automatically.
-    // Without this, Android guesses the size and gets it wrong.
+    // Reports our desired height to Android so the IME window
+    // wraps tightly around our keys and docks to bottom of screen.
+    // 5 rows × 52dp = 260dp total height.
     // -----------------------------------------------------------
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
-        val desiredHeight = (260f * density).toInt() // 5 rows × 52dp
+        val desiredHeight = (260f * density).toInt()
         val width = MeasureSpec.getSize(widthMeasureSpec)
         setMeasuredDimension(width, desiredHeight)
     }
 
     // -----------------------------------------------------------
     // DRAWING
-    // Android calls onDraw() whenever the keyboard needs to be redrawn.
     // -----------------------------------------------------------
 
     override fun onDraw(canvas: Canvas) {
-
-        // Fill the entire keyboard background with dark color
         canvas.drawColor(Color.parseColor("#1C1C1E"))
 
-        // If key positions haven't been calculated yet, calculate them now
-        if (keyRects.isEmpty()) {
-            calculateKeyPositions()
-        }
+        if (keyRects.isEmpty()) calculateKeyPositions()
 
-        // Loop through every key and draw it
         for ((key, rect) in keyRects) {
 
-            // Use pressed brush if this key is being touched, normal brush otherwise
-            val brush = if (key == pressedKey) pressedPaint else keyPaint
+            // Choose which background brush to use for this key
+            val brush = when {
+                key == pressedKey              -> pressedPaint
+                key.output == "shift" && isShifted -> shiftActivePaint
+                else                           -> keyPaint
+            }
 
-            // Draw the key background as a rounded rectangle
-            // 12f, 12f = corner radius (how rounded the corners are)
             canvas.drawRoundRect(rect, 12f, 12f, brush)
 
-            // Draw the key label text centered in the key
-            // textSize / 3 adjusts for how Android measures text height
-            val textY = rect.centerY() + (textPaint.textSize / 3f)
-            canvas.drawText(key.label, rect.centerX(), textY, textPaint)
+            // When shift is ON, show letter keys as uppercase
+            val displayLabel = when {
+                isShifted && key.label.length == 1 && key.label[0].isLetter() ->
+                    key.label.uppercase()
+                else -> key.label
+            }
+
+            // Use smaller text for keys with longer labels like "?123"
+            val paint = if (key.label.length > 2) smallTextPaint else textPaint
+
+            val textY = rect.centerY() + (paint.textSize / 3f)
+            canvas.drawText(displayLabel, rect.centerX(), textY, paint)
         }
     }
 
     // -----------------------------------------------------------
     // CALCULATE KEY POSITIONS
-    // This figures out where every key sits on screen.
-    // It runs once after we know the keyboard width and height.
+    // Runs once when keyboard size is known, or after resize.
     // -----------------------------------------------------------
 
     private fun calculateKeyPositions() {
         keyRects.clear()
 
-        val gap = 8f  // space between keys in pixels
-
-        // -----------------------------------------------------------
-        // KEY ROW HEIGHT
-        // Instead of dividing the full view height (which causes oversized keys),
-        // we use a fixed height per row based on screen density.
-        //
-        // density = pixels per dp on this screen (varies per phone)
-        // 52f     = 52dp per row — standard keyboard row height like Gboard
-        // Multiplying dp × density converts dp to real pixels for this screen.
-        // -----------------------------------------------------------
+        val gap = 8f
         val density = resources.displayMetrics.density
         val rowHeight = 52f * density
 
         for ((rowIndex, row) in BaseLayer.rows.withIndex()) {
 
-            // Y position = which row × fixed row height
             val rowTop    = rowIndex * rowHeight + gap / 2f
             val rowBottom = rowTop + rowHeight - gap
 
-            // Add up all width units in this row
             val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
-
-            // One unit of width in pixels
-            val unitWidth = width / totalUnits
+            val unitWidth  = width / totalUnits
 
             var xCursor = 0f
 
             for (key in row) {
                 val keyWidth = key.width * unitWidth
-
                 val left  = xCursor + gap / 2f
                 val right = xCursor + keyWidth - gap / 2f
-
                 keyRects.add(Pair(key, RectF(left, rowTop, right, rowBottom)))
-
                 xCursor += keyWidth
             }
         }
@@ -155,36 +161,52 @@ class KeyboardView(context: Context) : View(context) {
 
     // -----------------------------------------------------------
     // TOUCH HANDLING
-    // Android calls onTouchEvent() every time the finger moves.
-    // ACTION_DOWN = finger just touched screen
-    // ACTION_UP   = finger lifted off screen
+    // ACTION_DOWN = finger touched screen
+    // ACTION_UP   = finger lifted
     // -----------------------------------------------------------
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.action) {
 
             MotionEvent.ACTION_DOWN -> {
-                // Find which key was touched and mark it as pressed
-                pressedKey = getKeyAt(event.x, event.y)
-                invalidate() // tell Android to redraw so pressed color shows
+                val key = getKeyAt(event.x, event.y)
+                pressedKey = key
+                isLongPressing = false
+
+                // If backspace is held down, start the repeating delete
+                // after 400ms initial delay (same feel as standard keyboards)
+                if (key?.output == "delete") {
+                    handler.postDelayed({
+                        isLongPressing = true
+                        handler.post(deleteRunnable)
+                    }, 400)
+                }
+
+                invalidate()
             }
 
             MotionEvent.ACTION_UP -> {
-                // Find which key the finger lifted from and trigger it
-                val key = getKeyAt(event.x, event.y)
-                if (key != null) handleKeyPress(key)
+                // Always cancel any running long press delete
+                handler.removeCallbacks(deleteRunnable)
 
+                val key = getKeyAt(event.x, event.y)
+
+                // Only trigger a normal tap if we were NOT long pressing
+                // (long press already handled the deletes via the handler)
+                if (key != null && !isLongPressing) {
+                    handleKeyPress(key)
+                }
+
+                isLongPressing = false
                 pressedKey = null
-                invalidate() // redraw to remove pressed color
+                invalidate()
             }
         }
-        return true // true = we handled the event
+        return true
     }
 
     // -----------------------------------------------------------
     // GET KEY AT POSITION
-    // Given an x,y coordinate, find which key is there.
-    // Returns null if no key found at that position.
     // -----------------------------------------------------------
 
     private fun getKeyAt(x: Float, y: Float): Key? {
@@ -196,8 +218,6 @@ class KeyboardView(context: Context) : View(context) {
 
     // -----------------------------------------------------------
     // HANDLE KEY PRESS
-    // Called when a key is tapped. Decides what to do.
-    // currentInputConnection = the active text field in any app.
     // -----------------------------------------------------------
 
     private fun handleKeyPress(key: Key) {
@@ -205,31 +225,40 @@ class KeyboardView(context: Context) : View(context) {
 
         when (key.output) {
 
-            // Delete one character behind the cursor
             "delete" -> ic.deleteSurroundingText(1, 0)
 
-            // Send an Enter / newline
             "enter" -> {
                 ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
                 ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
             }
 
-            // Type a space
             "space" -> ic.commitText(" ", 1)
 
-            // Shift and switch — handled in future phases
-            "shift"  -> { /* Phase 2 */ }
-            "switch" -> { /* Phase 2 */ }
+            // Toggle shift ON/OFF and redraw so key colors update
+            "shift" -> {
+                isShifted = !isShifted
+                invalidate()
+            }
 
-            // Every other key — just type its output character
-            else -> ic.commitText(key.output, 1)
+            // Number layer — coming in next phase
+            "numbers" -> { /* Phase 2 */ }
+
+            // All letter and symbol keys
+            else -> {
+                // If shift is ON, type uppercase. Then turn shift OFF.
+                val output = if (isShifted) key.output.uppercase() else key.output
+                ic.commitText(output, 1)
+
+                if (isShifted) {
+                    isShifted = false
+                    invalidate()
+                }
+            }
         }
     }
 
     // -----------------------------------------------------------
-    // SIZE CHANGED
-    // Called when the keyboard's width or height is finalized.
-    // We clear keyRects so positions get recalculated for the new size.
+    // SIZE CHANGED — recalculate key positions for new dimensions
     // -----------------------------------------------------------
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -237,3 +266,4 @@ class KeyboardView(context: Context) : View(context) {
         invalidate()
     }
 }
+l
