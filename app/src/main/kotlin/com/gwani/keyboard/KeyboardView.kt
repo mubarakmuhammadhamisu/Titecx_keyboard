@@ -11,19 +11,11 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 
-// -----------------------------------------------------------
-// KEYBOARD VIEW
-// Draws keys on screen and handles all touch interactions.
-// -----------------------------------------------------------
-
 class KeyboardView(context: Context) : View(context) {
 
     var ime: GwaniIME? = null
 
-    // -----------------------------------------------------------
-    // PAINT OBJECTS — created once, reused every draw
-    // -----------------------------------------------------------
-
+    // Paint objects — created once, reused every draw call
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#2C2C2E")
     }
@@ -32,7 +24,7 @@ class KeyboardView(context: Context) : View(context) {
         color = Color.parseColor("#4C4C4E")
     }
 
-    // Shift active = highlighted color so user knows shift is ON
+    // Blue paint for shift key when shift is active
     private val shiftActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#0A84FF")
     }
@@ -43,34 +35,30 @@ class KeyboardView(context: Context) : View(context) {
         textAlign = Paint.Align.CENTER
     }
 
+    // Smaller text for keys with longer labels like ?123
     private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textSize = 32f
         textAlign = Paint.Align.CENTER
     }
 
-    // -----------------------------------------------------------
-    // STATE
-    // -----------------------------------------------------------
-
+    // List of every key paired with its rectangle (position + size)
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
+
+    // The key currently being pressed by the finger
     private var pressedKey: Key? = null
 
-    // Tracks whether shift is currently ON
-    // When true, next letter typed will be uppercase, then shift turns off
+    // Whether shift is currently ON
     private var isShifted = false
 
-    // -----------------------------------------------------------
-    // LONG PRESS BACKSPACE
-    // Handler runs on the main UI thread.
-    // When backspace is held, we post a repeating delete action
-    // every 50ms — same feel as Gboard continuous delete.
-    // -----------------------------------------------------------
-
+    // Handler runs on main UI thread — used for backspace long press
     private val handler = Handler(Looper.getMainLooper())
+
+    // Tracks if we are currently in a long press state
     private var isLongPressing = false
 
-    // This Runnable deletes one character then reschedules itself every 50ms
+    // Runnable that deletes one character and reschedules itself every 50ms
+    // This creates the continuous delete effect while backspace is held
     private val deleteRunnable = object : Runnable {
         override fun run() {
             ime?.currentInputConnection?.deleteSurroundingText(1, 0)
@@ -78,13 +66,8 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    // -----------------------------------------------------------
-    // onMeasure
-    // Reports our desired height to Android so the IME window
-    // wraps tightly around our keys and docks to bottom of screen.
-    // 5 rows × 52dp = 260dp total height.
-    // -----------------------------------------------------------
-
+    // onMeasure tells Android exactly how tall we want to be
+    // 5 rows x 52dp = 260dp — the IME window wraps this and docks to bottom
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
         val desiredHeight = (260f * density).toInt()
@@ -92,10 +75,7 @@ class KeyboardView(context: Context) : View(context) {
         setMeasuredDimension(width, desiredHeight)
     }
 
-    // -----------------------------------------------------------
-    // DRAWING
-    // -----------------------------------------------------------
-
+    // onDraw is called by Android whenever the keyboard needs to be redrawn
     override fun onDraw(canvas: Canvas) {
         canvas.drawColor(Color.parseColor("#1C1C1E"))
 
@@ -103,35 +83,31 @@ class KeyboardView(context: Context) : View(context) {
 
         for ((key, rect) in keyRects) {
 
-            // Choose which background brush to use for this key
+            // Pick the correct background color for this key
             val brush = when {
-                key == pressedKey              -> pressedPaint
+                key == pressedKey                  -> pressedPaint
                 key.output == "shift" && isShifted -> shiftActivePaint
-                else                           -> keyPaint
+                else                               -> keyPaint
             }
 
             canvas.drawRoundRect(rect, 12f, 12f, brush)
 
-            // When shift is ON, show letter keys as uppercase
+            // Show uppercase labels when shift is ON
             val displayLabel = when {
                 isShifted && key.label.length == 1 && key.label[0].isLetter() ->
                     key.label.uppercase()
                 else -> key.label
             }
 
-            // Use smaller text for keys with longer labels like "?123"
+            // Keys with labels longer than 2 chars use smaller text
             val paint = if (key.label.length > 2) smallTextPaint else textPaint
-
             val textY = rect.centerY() + (paint.textSize / 3f)
             canvas.drawText(displayLabel, rect.centerX(), textY, paint)
         }
     }
 
-    // -----------------------------------------------------------
-    // CALCULATE KEY POSITIONS
-    // Runs once when keyboard size is known, or after resize.
-    // -----------------------------------------------------------
-
+    // Calculates the pixel position and size of every key
+    // Runs once when keyboard dimensions are first known
     private fun calculateKeyPositions() {
         keyRects.clear()
 
@@ -140,7 +116,6 @@ class KeyboardView(context: Context) : View(context) {
         val rowHeight = 52f * density
 
         for ((rowIndex, row) in BaseLayer.rows.withIndex()) {
-
             val rowTop    = rowIndex * rowHeight + gap / 2f
             val rowBottom = rowTop + rowHeight - gap
 
@@ -159,12 +134,7 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    // -----------------------------------------------------------
-    // TOUCH HANDLING
-    // ACTION_DOWN = finger touched screen
-    // ACTION_UP   = finger lifted
-    // -----------------------------------------------------------
-
+    // onTouchEvent is called on every finger movement
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.action) {
 
@@ -173,8 +143,7 @@ class KeyboardView(context: Context) : View(context) {
                 pressedKey = key
                 isLongPressing = false
 
-                // If backspace is held down, start the repeating delete
-                // after 400ms initial delay (same feel as standard keyboards)
+                // Start long press delete after 400ms if backspace is held
                 if (key?.output == "delete") {
                     handler.postDelayed({
                         isLongPressing = true
@@ -186,13 +155,12 @@ class KeyboardView(context: Context) : View(context) {
             }
 
             MotionEvent.ACTION_UP -> {
-                // Always cancel any running long press delete
+                // Cancel any ongoing long press delete immediately
                 handler.removeCallbacks(deleteRunnable)
 
                 val key = getKeyAt(event.x, event.y)
 
-                // Only trigger a normal tap if we were NOT long pressing
-                // (long press already handled the deletes via the handler)
+                // Only fire normal tap if this was not a long press
                 if (key != null && !isLongPressing) {
                     handleKeyPress(key)
                 }
@@ -205,10 +173,7 @@ class KeyboardView(context: Context) : View(context) {
         return true
     }
 
-    // -----------------------------------------------------------
-    // GET KEY AT POSITION
-    // -----------------------------------------------------------
-
+    // Returns whichever key the finger is currently over
     private fun getKeyAt(x: Float, y: Float): Key? {
         for ((key, rect) in keyRects) {
             if (rect.contains(x, y)) return key
@@ -216,10 +181,7 @@ class KeyboardView(context: Context) : View(context) {
         return null
     }
 
-    // -----------------------------------------------------------
-    // HANDLE KEY PRESS
-    // -----------------------------------------------------------
-
+    // Decides what to do when a key is tapped
     private fun handleKeyPress(key: Key) {
         val ic = ime?.currentInputConnection ?: return
 
@@ -234,21 +196,17 @@ class KeyboardView(context: Context) : View(context) {
 
             "space" -> ic.commitText(" ", 1)
 
-            // Toggle shift ON/OFF and redraw so key colors update
             "shift" -> {
                 isShifted = !isShifted
                 invalidate()
             }
 
-            // Number layer — coming in next phase
-            "numbers" -> { /* Phase 2 */ }
+            // Number layer wired up in next phase
+            "numbers" -> { }
 
-            // All letter and symbol keys
             else -> {
-                // If shift is ON, type uppercase. Then turn shift OFF.
                 val output = if (isShifted) key.output.uppercase() else key.output
                 ic.commitText(output, 1)
-
                 if (isShifted) {
                     isShifted = false
                     invalidate()
@@ -257,13 +215,9 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    // -----------------------------------------------------------
-    // SIZE CHANGED — recalculate key positions for new dimensions
-    // -----------------------------------------------------------
-
+    // Called when keyboard dimensions change — forces key positions to recalculate
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         keyRects.clear()
         invalidate()
     }
 }
-l
