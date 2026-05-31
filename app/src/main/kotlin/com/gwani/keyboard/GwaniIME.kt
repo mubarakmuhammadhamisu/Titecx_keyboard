@@ -40,6 +40,29 @@ class GwaniIME : InputMethodService() {
         keyboardView.ime = this
 
         // -----------------------------------------------------------
+        // KEYBOARD HEIGHT
+        // 5 rows × 52dp each = 260dp total
+        // We convert dp to pixels using screen density.
+        // This matches the exact height KeyboardView draws its keys at.
+        // -----------------------------------------------------------
+        val density = resources.displayMetrics.density
+        val keyboardHeight = (260f * density).toInt()
+
+        keyboardView.layoutParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            keyboardHeight
+        )
+
+        // Return the view. Android will display it as the keyboard.
+        return keyboardView
+    }
+}
+        // Give the view a reference back to this service.
+        // The view needs this to call currentInputConnection
+        // which is how we actually type characters into apps.
+        keyboardView.ime = this
+
+        // -----------------------------------------------------------
         // FIX KEYBOARD HEIGHT
         // Without this, Android stretches the keyboard to full screen.
         // We calculate 40% of the screen height — same as Gboard/SwiftKey.
