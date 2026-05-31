@@ -97,31 +97,39 @@ class KeyboardView(context: Context) : View(context) {
     private fun calculateKeyPositions() {
         keyRects.clear()
 
-        val gap = 10f  // space between keys in pixels
-        val rowCount = BaseLayer.rows.size
+        val gap = 8f  // space between keys in pixels
 
-        // Height of each row
-        val rowHeight = height / rowCount.toFloat()
+        // -----------------------------------------------------------
+        // KEY ROW HEIGHT
+        // Instead of dividing the full view height (which causes oversized keys),
+        // we use a fixed height per row based on screen density.
+        //
+        // density = pixels per dp on this screen (varies per phone)
+        // 52f     = 52dp per row — standard keyboard row height like Gboard
+        // Multiplying dp × density converts dp to real pixels for this screen.
+        // -----------------------------------------------------------
+        val density = resources.displayMetrics.density
+        val rowHeight = 52f * density
 
         for ((rowIndex, row) in BaseLayer.rows.withIndex()) {
 
-            // Y position = which row we are on × height of one row
-            val rowTop = rowIndex * rowHeight + gap / 2f
+            // Y position = which row × fixed row height
+            val rowTop    = rowIndex * rowHeight + gap / 2f
             val rowBottom = rowTop + rowHeight - gap
 
-            // Add up all the width units in this row to know total units
+            // Add up all width units in this row
             val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
 
             // One unit of width in pixels
             val unitWidth = width / totalUnits
 
-            var xCursor = 0f  // tracks where we are horizontally
+            var xCursor = 0f
 
             for (key in row) {
                 val keyWidth = key.width * unitWidth
 
-                val left   = xCursor + gap / 2f
-                val right  = xCursor + keyWidth - gap / 2f
+                val left  = xCursor + gap / 2f
+                val right = xCursor + keyWidth - gap / 2f
 
                 keyRects.add(Pair(key, RectF(left, rowTop, right, rowBottom)))
 
@@ -135,6 +143,85 @@ class KeyboardView(context: Context) : View(context) {
     // Android calls onTouchEvent() every time the finger moves.
     // ACTION_DOWN = finger just touched screen
     // ACTION_UP   = finger lifted off screen
+    // -----------------------------------------------------------
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.action) {
+
+            MotionEvent.ACTION_DOWN -> {
+                // Find which key was touched and mark it as pressed
+                pressedKey = getKeyAt(event.x, event.y)
+                invalidate() // tell Android to redraw so pressed color shows
+            }
+
+            MotionEvent.ACTION_UP -> {
+                // Find which key the finger lifted from and trigger it
+                val key = getKeyAt(event.x, event.y)
+                if (key != null) handleKeyPress(key)
+
+                pressedKey = null
+                invalidate() // redraw to remove pressed color
+            }
+        }
+        return true // true = we handled the event
+    }
+
+    // -----------------------------------------------------------
+    // GET KEY AT POSITION
+    // Given an x,y coordinate, find which key is there.
+    // Returns null if no key found at that position.
+    // -----------------------------------------------------------
+
+    private fun getKeyAt(x: Float, y: Float): Key? {
+        for ((key, rect) in keyRects) {
+            if (rect.contains(x, y)) return key
+        }
+        return null
+    }
+
+    // -----------------------------------------------------------
+    // HANDLE KEY PRESS
+    // Called when a key is tapped. Decides what to do.
+    // currentInputConnection = the active text field in any app.
+    // -----------------------------------------------------------
+
+    private fun handleKeyPress(key: Key) {
+        val ic = ime?.currentInputConnection ?: return
+
+        when (key.output) {
+
+            // Delete one character behind the cursor
+            "delete" -> ic.deleteSurroundingText(1, 0)
+
+            // Send an Enter / newline
+            "enter" -> {
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+            }
+
+            // Type a space
+            "space" -> ic.commitText(" ", 1)
+
+            // Shift and switch — handled in future phases
+            "shift"  -> { /* Phase 2 */ }
+            "switch" -> { /* Phase 2 */ }
+
+            // Every other key — just type its output character
+            else -> ic.commitText(key.output, 1)
+        }
+    }
+
+    // -----------------------------------------------------------
+    // SIZE CHANGED
+    // Called when the keyboard's width or height is finalized.
+    // We clear keyRects so positions get recalculated for the new size.
+    // -----------------------------------------------------------
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        keyRects.clear()
+        invalidate()
+    }
+}
     // -----------------------------------------------------------
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
