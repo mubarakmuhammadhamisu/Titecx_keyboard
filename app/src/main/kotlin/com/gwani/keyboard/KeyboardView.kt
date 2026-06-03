@@ -78,7 +78,10 @@ class KeyboardView(context: Context) : View(context) {
     // 5 rows x 52dp = 260dp — the IME window wraps this and docks to bottom
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val density = resources.displayMetrics.density
-        val desiredHeight = (260f * density).toInt()
+        // Ask GwaniIME for correct height based on current orientation
+        // Falls back to 260dp if ime is not yet connected
+        val desiredHeight = ime?.getKeyboardHeight()
+            ?: (260f * density).toInt()
         val width = MeasureSpec.getSize(widthMeasureSpec)
         setMeasuredDimension(width, desiredHeight)
     }
