@@ -5,8 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.os.Handler
-import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -64,19 +62,11 @@ class KeyboardView(context: Context) : View(context) {
     // 2 = caps lock — all letters stay capital until shift tapped again
     private var shiftState = 0
 
-    // Handler runs on main UI thread — used for backspace long press
-    private val handler = Handler(Looper.getMainLooper())
-
-    // Tracks if we are currently in a long press state
-    private var isLongPressing = false
-
-    // Runnable that deletes one character and reschedules itself every 50ms
-    // This creates the continuous delete effect while backspace is held
-    private val deleteRunnable = object : Runnable {
-        override fun run() {
-            ime?.currentInputConnection?.deleteSurroundingText(1, 0)
-            handler.postDelayed(this, 50)
-        }
+    // BackspaceHandler lives in its own file BackspaceHandler.kt
+    // We pass it a lambda that deletes one character
+    // BackspaceHandler handles all tap vs long press logic internally
+    private val backspaceHandler = BackspaceHandler {
+        ime?.currentInputConnection?.deleteSurroundingText(1, 0)
     }
 
     // onMeasure tells Android exactly how tall we want to be
@@ -153,36 +143,26 @@ class KeyboardView(context: Context) : View(context) {
 
     // onTouchEvent is called on every finger movement
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        val key = getKeyAt(event.x, event.y)
+
+        // Backspace is handled entirely by BackspaceHandler
+        // We pass the event directly to it and let it manage
+        // tap vs long press logic internally
+        if (key?.output == "delete") {
+            pressedKey = if (event.action == MotionEvent.ACTION_DOWN) key else null
+            invalidate()
+            return backspaceHandler.onTouch(this, event)
+        }
+
         when (event.action) {
 
             MotionEvent.ACTION_DOWN -> {
-                val key = getKeyAt(event.x, event.y)
                 pressedKey = key
-                isLongPressing = false
-
-                // Start long press delete after 400ms if backspace is held
-                if (key?.output == "delete") {
-                    handler.postDelayed({
-                        isLongPressing = true
-                        handler.postDelayed(deleteRunnable, 50)
-                    }, 400)
-                }
-
                 invalidate()
             }
 
             MotionEvent.ACTION_UP -> {
-                // Cancel any ongoing long press delete immediately
-                handler.removeCallbacks(deleteRunnable)
-
-                val key = getKeyAt(event.x, event.y)
-
-                // Only fire normal tap if this was not a long press
-                if (key != null && !isLongPressing) {
-                    handleKeyPress(key)
-                }
-
-                isLongPressing = false
+                if (key != null) handleKeyPress(key)
                 pressedKey = null
                 invalidate()
             }
@@ -203,8 +183,6 @@ class KeyboardView(context: Context) : View(context) {
         val ic = ime?.currentInputConnection ?: return
 
         when (key.output) {
-
-            "delete" -> ic.deleteSurroundingText(1, 0)
 
             "enter" -> {
                 ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
