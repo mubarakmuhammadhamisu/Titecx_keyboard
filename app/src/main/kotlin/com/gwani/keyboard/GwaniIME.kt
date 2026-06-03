@@ -38,9 +38,9 @@ class GwaniIME : InputMethodService() {
         val isLandscape = resources.configuration.orientation ==
                 Configuration.ORIENTATION_LANDSCAPE
 
-        // NEW — landscape uses 160dp (shorter) portrait uses 260dp (normal)
-        // Landscape screen height is much smaller so we reduce keyboard height
-        val heightDp = if (isLandscape) 170f else 260f
+        // Portrait: 300dp fits 6 rows comfortably (3 letter + 2 thin + 1 bottom)
+        // Landscape: 220dp keeps keyboard usable without blocking too much screen
+        val heightDp = if (isLandscape) 175f else 280f
 
         return (heightDp * density).toInt()
     }
