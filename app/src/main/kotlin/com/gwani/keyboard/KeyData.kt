@@ -18,6 +18,10 @@ object BaseLayer {
 
     // rows is a list of rows. Each row is a list of keys.
     val rows: List<List<Key>> = listOf(
+        listOf(
+            Key("1", "1"), Key("2", "2"), Key("3", "3"), Key("4", "4"), Key("5", "5"), 
+            Key("6", "6"), Key("7", "7"), Key("8", "8"), Key("9", "9"), Key("0", "0")
+        ) 
 
         // Row 1 — top letter row
         listOf(
