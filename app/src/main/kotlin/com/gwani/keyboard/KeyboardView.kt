@@ -117,14 +117,31 @@ class KeyboardView(context: Context) : View(context) {
         keyRects.clear()
 
         val gap = 8f
-        // Row height = total keyboard height divided by number of rows
-        // This makes rows always fill the keyboard exactly
-        // regardless of orientation or screen size
-        val rowHeight = keyboardHeight / BaseLayer.rows.size.toFloat()
+
+        // Each row has a weight that controls its height relative to others.
+        // 0.7 = thin row (numbers and symbols)
+        // 1.0 = normal row (letters and bottom row)
+        // Row order matches BaseLayer.rows exactly:
+        // 0=numbers, 1=qwerty, 2=asdfg, 3=shift/zxcv, 4=symbols, 5=bottom
+        val rowWeights = listOf(0.7f, 1.0f, 1.0f, 1.0f, 0.7f, 1.0f)
+
+        // Add up all weights to know the total
+        val totalWeight = rowWeights.sum()
+
+        // One unit of height in pixels
+        // All row heights are calculated from this single unit
+        val unitHeight = keyboardHeight / totalWeight
+
+        // Track vertical position as we place rows top to bottom
+        var yCursor = 0f
 
         for ((rowIndex, row) in BaseLayer.rows.withIndex()) {
-            val rowTop    = rowIndex * rowHeight + gap / 2f
-            val rowBottom = rowTop + rowHeight - gap
+
+            // This row's height = its weight × one unit of height
+            val rowHeight = rowWeights[rowIndex] * unitHeight
+
+            val rowTop    = yCursor + gap / 2f
+            val rowBottom = yCursor + rowHeight - gap / 2f
 
             val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
             val unitWidth  = width / totalUnits
@@ -138,6 +155,8 @@ class KeyboardView(context: Context) : View(context) {
                 keyRects.add(Pair(key, RectF(left, rowTop, right, rowBottom)))
                 xCursor += keyWidth
             }
+
+            yCursor += rowHeight
         }
     }
 
