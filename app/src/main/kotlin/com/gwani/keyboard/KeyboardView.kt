@@ -123,7 +123,7 @@ class KeyboardView(context: Context) : View(context) {
         // 1.0 = normal row (letters and bottom row)
         // Row order matches BaseLayer.rows exactly:
         // 0=numbers, 1=qwerty, 2=asdfg, 3=shift/zxcv, 4=symbols, 5=bottom
-        val rowWeights = listOf(0.7f, 1.0f, 1.0f, 1.0f, 0.7f, 1.0f)
+        val rowWeights = listOf(0.7f, 1.0f, 1.0f, 1.0f, 1.0f)
 
         // Add up all weights to know the total
         val totalWeight = rowWeights.sum()
