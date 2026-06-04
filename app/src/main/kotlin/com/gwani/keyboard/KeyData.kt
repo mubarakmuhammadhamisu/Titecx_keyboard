@@ -44,13 +44,13 @@ object BaseLayer {
         ),
 
         // Row 4 — symbol row (always visible)
-        listOf(
-            Key("₦", "₦"), Key("@", "@"), Key("&", "&"),
-            Key("%", "%"), Key("/", "/"), Key("(", "("),
-            Key(")", ")"), Key("?", "?"), Key("$", "$")
-        ),
+        //listOf(
+       //     Key("₦", "₦"), Key("@", "@"), Key("&", "&"),
+      //      Key("%", "%"), Key("/", "/"), Key("(", "("),
+     //       Key(")", ")"), Key("?", "?"), Key("$", "$")
+    //    ),
 
-        // Row 5 — bottom row: numbers, comma, space, period, enter
+        // Row 5 — botom row: numbers, comma, space, period, enter
         listOf(
             Key("?123", "numbers", 1.2f),
             Key(",", ",", 0.8f),
