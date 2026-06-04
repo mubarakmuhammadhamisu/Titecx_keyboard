@@ -40,7 +40,7 @@ class GwaniIME : InputMethodService() {
 
         // Portrait: 300dp fits 6 rows comfortably (3 letter + 2 thin + 1 bottom)
         // Landscape: 220dp keeps keyboard usable without blocking too much screen
-        val heightDp = if (isLandscape) 175f else 280f
+        val heightDp = if (isLandscape) 165f else 250f
 
         return (heightDp * density).toInt()
     }
