@@ -116,7 +116,7 @@ class KeyboardView(context: Context) : View(context) {
     private fun calculateKeyPositions() {
         keyRects.clear()
 
-        val gap = 8f
+        val gap = 9f
 
         // Each row has a weight that controls its height relative to others.
         // 0.7 = thin row (numbers and symbols)
