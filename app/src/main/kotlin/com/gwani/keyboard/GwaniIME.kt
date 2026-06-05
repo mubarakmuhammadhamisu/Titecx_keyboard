@@ -9,24 +9,30 @@ class GwaniIME : InputMethodService() {
 
     private lateinit var keyboardView: KeyboardView
 
+    // Future top settings bar height in dp — set to 0 now, change this one number later
+    // when the settings bar is added and the key area will shrink automatically
+    private val topBarHeightDp = 0f
+
     override fun onCreateInputView(): View {
         keyboardView = KeyboardView(this)
         keyboardView.ime = this
         return keyboardView
     }
 
-    // NEW — called every time the keyboard appears on screen
-    // (onCreateInputView only runs once ever — this runs every time)
-    // We use this to fix the window position on Android 14
+    // Called every time the keyboard appears on screen
+    // (onCreateInputView only runs once — this runs every time)
     override fun onStartInputView(info: android.view.inputmethod.EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
 
-        // NEW — forces the keyboard window to anchor to the bottom of the screen
-        // Without this Android 14 sometimes floats it in the wrong position
-        // when the input field is in the middle of the screen
+        // Anchor keyboard window to bottom of screen
         window?.window?.setSoftInputMode(
             WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         )
+
+        // Auto-capitalize: start in shift state so first letter is capital
+        // After the first character is typed, KeyboardView drops back to lowercase automatically
+        keyboardView.shiftState = 1
+        keyboardView.invalidate()
     }
 
     // NEW — detects screen orientation and returns correct keyboard height
@@ -40,7 +46,8 @@ class GwaniIME : InputMethodService() {
 
         // Portrait: 270dp gives each row comfortable breathing room
         // Landscape: 165dp keeps keyboard usable without blocking too much screen
-        val heightDp = if (isLandscape) 165f else 270f
+        // topBarHeightDp is subtracted so key area shrinks when settings bar is added
+        val heightDp = (if (isLandscape) 165f else 270f) - topBarHeightDp
 
         return (heightDp * density).toInt()
     }
