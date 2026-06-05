@@ -39,15 +39,17 @@ class KeyboardView(context: Context) : View(context) {
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = resources.displayMetrics.density * 13f
+        textSize = resources.displayMetrics.density * 15f
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
     // Smaller text for keys with longer labels like ?123
     private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = resources.displayMetrics.density * 11f
+        textSize = resources.displayMetrics.density * 13f
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
     // Stores current keyboard height in pixels
@@ -65,7 +67,7 @@ class KeyboardView(context: Context) : View(context) {
     // 0 = normal    — lowercase
     // 1 = shift     — next letter typed is capital, then back to normal
     // 2 = caps lock — all letters stay capital until shift tapped again
-    private var shiftState = 0
+    var shiftState = 0
 
     // BackspaceHandler lives in its own file BackspaceHandler.kt
     // We pass it a lambda that deletes one character
@@ -97,7 +99,7 @@ class KeyboardView(context: Context) : View(context) {
                 key == pressedKey                                                    -> pressedPaint
                 key.output == "shift" && shiftState == 1                             -> shiftActivePaint
                 key.output == "shift" && shiftState == 2                             -> capsActivePaint
-                key.output in setOf("shift", "delete", "numbers", "enter", "space") -> specialKeyPaint
+                key.output in setOf("shift", "delete", "numbers", "enter", "space", "emoji") -> specialKeyPaint
                 else                                                                 -> keyPaint
             }
 
@@ -156,12 +158,16 @@ class KeyboardView(context: Context) : View(context) {
             val rowTop    = yCursor + gap / 2f
             val rowBottom = yCursor + rowHeight - gap / 2f
 
-            val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
             val unitWidth  = width / referenceRowUnits
 
-            // Center rows that are narrower than the reference row (QWERTY)
-            // ASDFGHJKL has 9 units vs 10 — offset = 0.5 * unitWidth each side
-            val rowIndent = ((referenceRowUnits - totalUnits) / 2f) * unitWidth
+            // Only row 2 (ASDFGHJKL) gets centered — all other rows span full width
+            // This matches Gboard and SwiftKey where only the middle letter row is indented
+            val rowIndent = if (rowIndex == 2) {
+                val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
+                ((referenceRowUnits - totalUnits) / 2f) * unitWidth
+            } else {
+                0f
+            }
 
             var xCursor = rowIndent
 
@@ -237,8 +243,9 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
 
-            // Number layer wired up in next phase
+            // Emoji and number layers — wired up in next phase
             "numbers" -> { }
+            "emoji"   -> { }
 
             else -> {
                 val output = if (shiftState > 0) key.output.uppercase() else key.output
