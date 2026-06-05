@@ -50,13 +50,14 @@ object BaseLayer {
      //       Key(")", ")"), Key("?", "?"), Key("$", "$")
     //    ),
 
-        // Row 5 — botom row: numbers, comma, space, period, enter
+        // Row 5 — bottom row: emoji, numbers, comma, space, period, enter
         listOf(
             Key("?123", "numbers", 1.2f),
-            Key(",", ",", 0.8f),
-            Key("", "space", 3.5f),
-            Key(".", ".", 0.8f),
-            Key("↩", "enter", 1.2f)
+            Key("😊", "emoji",   1.0f),
+            Key(",",  ",",       0.8f),
+            Key("",  "space",   4.5f),
+            Key(".",  ".",       0.8f),
+            Key("↩",  "enter",   1.2f)
         )
     )
 }
