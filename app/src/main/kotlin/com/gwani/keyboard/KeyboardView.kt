@@ -15,11 +15,16 @@ class KeyboardView(context: Context) : View(context) {
 
     // Paint objects — created once, reused every draw call
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#2C2C2E")
+        color = Color.parseColor("#252538")
     }
 
     private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#4C4C4E")
+        color = Color.parseColor("#4A4A6A")
+    }
+
+    // Special keys: shift, delete, space, enter, ?123
+    private val specialKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#2E2E45")
     }
 
     // Blue — shift active (one capital coming)
@@ -34,14 +39,14 @@ class KeyboardView(context: Context) : View(context) {
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 44f
+        textSize = resources.displayMetrics.density * 13f
         textAlign = Paint.Align.CENTER
     }
 
     // Smaller text for keys with longer labels like ?123
     private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 32f
+        textSize = resources.displayMetrics.density * 11f
         textAlign = Paint.Align.CENTER
     }
 
@@ -81,7 +86,7 @@ class KeyboardView(context: Context) : View(context) {
 
     // onDraw is called by Android whenever the keyboard needs to be redrawn
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(Color.parseColor("#1C1C1E"))
+        canvas.drawColor(Color.parseColor("#1A1A2E"))
 
         if (keyRects.isEmpty()) calculateKeyPositions()
 
@@ -89,13 +94,15 @@ class KeyboardView(context: Context) : View(context) {
 
             // Pick the correct background color for this key
             val brush = when {
-                key == pressedKey                     -> pressedPaint
-                key.output == "shift" && shiftState == 1 -> shiftActivePaint
-                key.output == "shift" && shiftState == 2 -> capsActivePaint
-                else                                  -> keyPaint
+                key == pressedKey                                                    -> pressedPaint
+                key.output == "shift" && shiftState == 1                             -> shiftActivePaint
+                key.output == "shift" && shiftState == 2                             -> capsActivePaint
+                key.output in setOf("shift", "delete", "numbers", "enter", "space") -> specialKeyPaint
+                else                                                                 -> keyPaint
             }
 
-            canvas.drawRoundRect(rect, 12f, 12f, brush)
+            val cornerRadius = resources.displayMetrics.density * 5f
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, brush)
 
             // Show uppercase labels when shift or caps lock is ON
             val displayLabel = when {
@@ -116,7 +123,13 @@ class KeyboardView(context: Context) : View(context) {
     private fun calculateKeyPositions() {
         keyRects.clear()
 
-        val gap = 9f
+        // Gap between keys, scaled to screen density so it looks the same on all screens
+        val gap = resources.displayMetrics.density * 6f
+
+        // Row 1 (QWERTY) is the reference width — 10 keys of equal width = 10 units
+        // Row 2 (ASDFGHJKL) has 9 keys = 9 units, so we indent it by 0.5 units each side
+        // This matches the centered appearance of Gboard and SwiftKey
+        val referenceRowUnits = BaseLayer.rows[1].sumOf { it.width.toDouble() }.toFloat()
 
         // Each row has a weight that controls its height relative to others.
         // 0.7 = thin row (numbers and symbols)
@@ -144,9 +157,13 @@ class KeyboardView(context: Context) : View(context) {
             val rowBottom = yCursor + rowHeight - gap / 2f
 
             val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
-            val unitWidth  = width / totalUnits
+            val unitWidth  = width / referenceRowUnits
 
-            var xCursor = 0f
+            // Center rows that are narrower than the reference row (QWERTY)
+            // ASDFGHJKL has 9 units vs 10 — offset = 0.5 * unitWidth each side
+            val rowIndent = ((referenceRowUnits - totalUnits) / 2f) * unitWidth
+
+            var xCursor = rowIndent
 
             for (key in row) {
                 val keyWidth = key.width * unitWidth
