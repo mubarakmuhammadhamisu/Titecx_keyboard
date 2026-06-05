@@ -5,16 +5,16 @@
 -->
 <resources>
     <!-- Background of the entire keyboard -->
-    <color name="keyboard_bg">#1C1C1E</color>
+    <color name="keyboard_bg">#1A1A2E</color>
 
     <!-- Normal key background -->
-    <color name="key_bg">#2C2C2E</color>
+    <color name="key_bg">#252538</color>
 
     <!-- Key background when finger is pressing it -->
-    <color name="key_pressed">#4C4C4E</color>
+    <color name="key_pressed">#4A4A6A</color>
 
-    <!-- Special keys like shift, delete, space -->
-    <color name="key_special">#3A3A3C</color>
+    <!-- Special keys like shift, delete, space, enter, ?123 -->
+    <color name="key_special">#2E2E45</color>
 
     <!-- Key label text -->
     <color name="key_text">#FFFFFF</color>
