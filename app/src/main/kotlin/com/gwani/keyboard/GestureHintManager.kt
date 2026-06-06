@@ -4,50 +4,51 @@ import android.content.Context
 
 // -----------------------------------------------------------
 // GESTURE HINT MANAGER
-// Decides when to show the hint bubble above a key.
+// Controls when the hint bubble appears above a key.
 //
-// Rules:
-//   - New users: hint shows automatically on every key tap
-//   - After 100 total taps: auto-hints stop
-//   - Long press: hint always shows regardless of tap count
+// Two situations show a hint:
+//   1. First 20 taps on a gesture key — onboarding only, then stops forever
+//   2. Long press — always shows, reminds user it's a swipe not a press
 //
-// "New user" is tracked in SharedPreferences so it
-// persists across keyboard sessions.
+// Tap count is saved to SharedPreferences so it persists across sessions.
+// Once the user hits 20 gesture-key taps, auto-hints are gone for good.
 // -----------------------------------------------------------
 
 class GestureHintManager(context: Context) {
 
-    // SharedPreferences = simple key-value storage that survives app restarts
-    // We store total tap count here
+    // SharedPreferences = permanent simple storage that survives app restarts
     private val prefs = context.getSharedPreferences(
-        "gwani_hints",      // file name
-        Context.MODE_PRIVATE // only our app can read this
+        "gwani_hints",
+        Context.MODE_PRIVATE
     )
 
-    // How many taps before auto-hints stop
-    private val newUserTapLimit = 100
+    // Stop auto-hinting after this many taps on gesture keys
+    // 20 is enough for the user to notice the pattern without being annoying
+    private val onboardingLimit = 20
 
-    // Current tap count loaded from storage
-    private var tapCount = prefs.getInt("tap_count", 0)
+    // Load saved tap count from storage (0 if first time)
+    private var gestureTapCount = prefs.getInt("gesture_tap_count", 0)
 
-    // Call this every time a key is tapped
-    // Returns true if we should show the hint automatically
-    fun onKeyTapped(): Boolean {
-        tapCount++
+    // Call this every time a gesture key is tapped (keys that have swipeUp)
+    // Returns true = show the hint, false = don't show
+    fun onGestureKeyTapped(): Boolean {
+        // Once past the limit, never auto-show again
+        if (gestureTapCount >= onboardingLimit) return false
 
-        // Save updated count to storage every 10 taps
-        // (saving every tap would be too slow)
-        if (tapCount % 10 == 0) {
-            prefs.edit().putInt("tap_count", tapCount).apply()
+        gestureTapCount++
+
+        // Save to storage every 5 taps to avoid writing too often
+        if (gestureTapCount % 5 == 0) {
+            prefs.edit().putInt("gesture_tap_count", gestureTapCount).apply()
         }
 
-        // Show auto-hint only if user is still in the new-user phase
-        return tapCount <= newUserTapLimit
+        return true
     }
 
-    // Long press always shows hint — no condition needed
+    // Long press always shows the hint — no condition
+    // This reminds the user: "this is a swipe, not a hold"
     fun onLongPress(): Boolean = true
 
-    // How long the hint stays visible in milliseconds
+    // How long the hint bubble stays on screen in milliseconds
     val hintDurationMs = 1000L
 }
