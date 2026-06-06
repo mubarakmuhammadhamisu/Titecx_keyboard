@@ -99,6 +99,13 @@ class KeyboardView(context: Context) : View(context) {
     private val keyRects = mutableListOf<Pair<Key, RectF>>()
     private var pressedKey: Key? = null
 
+    // The key where the current gesture STARTED — not where the finger is now
+    // This is the fix for the main gesture bug:
+    // When swiping up on K, the finger lifts above K (outside K's rectangle)
+    // getKeyAt(event.x, event.y) at ACTION_UP returns null or a wrong key
+    // We must remember which key the gesture started on and use that instead
+    private var gestureStartKey: Key? = null
+
     // Shift states: 0=normal  1=shift(one cap)  2=caps lock
     var shiftState = 0
 
@@ -322,9 +329,10 @@ class KeyboardView(context: Context) : View(context) {
 
             MotionEvent.ACTION_DOWN -> {
                 pressedKey = key
+                gestureStartKey = key  // remember which key this gesture started on
                 gestureEngine.onTouchDown(event.x, event.y)
 
-                // Schedule long press hint after 500ms
+                // Schedule long press hint after 600ms
                 if (key != null) {
                     val rect = getRectForKey(key)
                     if (rect != null && (key.swipeUp.isNotEmpty() || key.output == "space")) {
@@ -336,6 +344,12 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
 
+            MotionEvent.ACTION_MOVE -> {
+                // Forward movement to gesture engine so currentX/currentY stay fresh
+                // Used later for live gesture trail and Flow Layer flick previews
+                gestureEngine.onTouchMove(event.x, event.y)
+            }
+
             MotionEvent.ACTION_UP -> {
                 // Cancel any pending long press
                 longPressHandler.removeCallbacks(longPressRunnable)
@@ -343,37 +357,43 @@ class KeyboardView(context: Context) : View(context) {
 
                 val direction = gestureEngine.onTouchUp(event.x, event.y)
 
-                if (key != null) {
+                // Use gestureStartKey — NOT key (which is where finger lifted)
+                // If the user swiped up on K, the finger lifts above K's rectangle
+                // getKeyAt() at this point returns null or a wrong key
+                // gestureStartKey always holds the correct origin key
+                val targetKey = gestureStartKey
+
+                if (targetKey != null) {
                     when (direction) {
 
                         GestureDirection.NONE -> {
-                            // Normal tap
-                            handleKeyPress(key)
+                            // Normal tap — use targetKey (same as tap origin)
+                            handleKeyPress(targetKey)
 
                             // Show hint automatically — only for the first 20 taps on gesture keys
                             // After that it stops forever unless the user long presses
                             if (hintManager.onGestureKeyTapped()) {
-                                val rect = getRectForKey(key)
+                                val rect = getRectForKey(targetKey)
                                 if (rect != null &&
-                                    (key.swipeUp.isNotEmpty() || key.output == "space")) {
-                                    showHint(key, rect)
+                                    (targetKey.swipeUp.isNotEmpty() || targetKey.output == "space")) {
+                                    showHint(targetKey, rect)
                                 }
                             }
                         }
 
                         GestureDirection.UP -> {
-                            // Swipe up — type the secondary character
-                            handleSwipeUp(key)
+                            // Swipe up on the START key — type its secondary character
+                            handleSwipeUp(targetKey)
                         }
 
                         GestureDirection.LEFT -> {
-                            if (key.output == "space") {
+                            if (targetKey.output == "space") {
                                 // TODO: Switch to Flow Layer (Phase 3)
                             }
                         }
 
                         GestureDirection.RIGHT -> {
-                            if (key.output == "space") {
+                            if (targetKey.output == "space") {
                                 // TODO: Switch back to Base Layer (Phase 3)
                             }
                         }
@@ -383,6 +403,10 @@ class KeyboardView(context: Context) : View(context) {
                         }
                     }
                 }
+
+                // Clean up after every gesture — prevents stale data leaking into next touch
+                gestureStartKey = null
+                gestureEngine.reset()
 
                 pressedKey = null
                 invalidate()
