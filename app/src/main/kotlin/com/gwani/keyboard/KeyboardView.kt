@@ -5,6 +5,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -13,163 +15,263 @@ class KeyboardView(context: Context) : View(context) {
 
     var ime: GwaniIME? = null
 
-    // Paint objects — created once, reused every draw call
-    private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#252538")
-    }
+    // Pixel density — used to convert dp to pixels throughout
+    private val density = context.resources.displayMetrics.density
 
-    private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#4A4A6A")
-    }
+    // -------------------------------------------------------
+    // ENGINES AND MANAGERS
+    // -------------------------------------------------------
 
-    // Special keys: shift, delete, space, enter, ?123
-    private val specialKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#2E2E45")
-    }
+    // Detects swipe direction from touch start/end points
+    private val gestureEngine = GestureEngine(context)
 
-    // Blue — shift active (one capital coming)
-    private val shiftActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#0A84FF")
-    }
+    // Decides when to show gesture hints to the user
+    private val hintManager = GestureHintManager(context)
 
-    // Orange — caps lock active (all capitals locked)
-    private val capsActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FF9F0A")
-    }
-
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = resources.displayMetrics.density * 15f
-        textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-    }
-
-    // Smaller text for keys with longer labels like ?123
-    private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = resources.displayMetrics.density * 13f
-        textAlign = Paint.Align.CENTER
-        typeface = android.graphics.Typeface.DEFAULT_BOLD
-    }
-
-    // Stores current keyboard height in pixels
-    // Set in onMeasure, read in calculateKeyPositions
-    // Both functions stay in sync this way
-    private var keyboardHeight = 0
-
-    // List of every key paired with its rectangle (position + size)
-    private val keyRects = mutableListOf<Pair<Key, RectF>>()
-
-    // The key currently being pressed by the finger
-    private var pressedKey: Key? = null
-
-    // Shift has three states:
-    // 0 = normal    — lowercase
-    // 1 = shift     — next letter typed is capital, then back to normal
-    // 2 = caps lock — all letters stay capital until shift tapped again
-    var shiftState = 0
-
-    // BackspaceHandler lives in its own file BackspaceHandler.kt
-    // We pass it a lambda that deletes one character
-    // BackspaceHandler handles all tap vs long press logic internally
+    // Handles backspace tap vs long press — lives in BackspaceHandler.kt
     private val backspaceHandler = BackspaceHandler {
         ime?.currentInputConnection?.deleteSurroundingText(1, 0)
     }
 
-    // onMeasure tells Android exactly how tall we want to be
-    // 5 rows x 52dp = 260dp — the IME window wraps this and docks to bottom
+    // -------------------------------------------------------
+    // PAINT OBJECTS — created once, reused every draw
+    // -------------------------------------------------------
+
+    private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#2C2C2E")
+    }
+
+    private val specialKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        // Slightly lighter than normal keys for shift, delete, space, enter
+        color = Color.parseColor("#3A3A3C")
+    }
+
+    private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#4C4C4E")
+    }
+
+    private val shiftActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0A84FF") // blue — shift on
+    }
+
+    private val capsActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#FF9F0A") // orange — caps lock
+    }
+
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = density * 15f
+        textAlign = Paint.Align.CENTER
+    }
+
+    private val smallTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = density * 13f
+        textAlign = Paint.Align.CENTER
+    }
+
+    // Small indicator at top-left of each key showing swipeUp character
+    private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#AAAAAA") // grey — subtle, not distracting
+        textSize = density * 9f
+        textAlign = Paint.Align.LEFT
+    }
+
+    // Hint bubble background — semi-transparent dark
+    private val hintBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#CC1C1C1E")
+    }
+
+    // Hint bubble text
+    private val hintTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = density * 13f
+        textAlign = Paint.Align.CENTER
+    }
+
+    // -------------------------------------------------------
+    // STATE
+    // -------------------------------------------------------
+
+    private var keyboardHeight = 0
+    private val keyRects = mutableListOf<Pair<Key, RectF>>()
+    private var pressedKey: Key? = null
+
+    // Shift states: 0=normal  1=shift(one cap)  2=caps lock
+    var shiftState = 0
+
+    // Hint state — which key is currently showing its hint bubble
+    private var hintKey: Key? = null
+    private var hintKeyRect: RectF? = null
+    private val hintHandler = Handler(Looper.getMainLooper())
+
+    // Runnable that dismisses the hint after the set duration
+    private val dismissHintRunnable = Runnable {
+        hintKey = null
+        hintKeyRect = null
+        invalidate()
+    }
+
+    // Long press handler for non-backspace keys (shows hint)
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private var longPressTarget: Pair<Key, RectF>? = null
+
+    private val longPressRunnable = Runnable {
+        longPressTarget?.let { (key, rect) ->
+            if (key.swipeUp.isNotEmpty() || key.output == "space") {
+                showHint(key, rect)
+            }
+        }
+    }
+
+    // -------------------------------------------------------
+    // MEASURE — tells Android our exact desired height
+    // -------------------------------------------------------
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val density = resources.displayMetrics.density
-        keyboardHeight = ime?.getKeyboardHeight()
-            ?: (260f * density).toInt()
+        keyboardHeight = ime?.getKeyboardHeight() ?: (260f * density).toInt()
         val width = MeasureSpec.getSize(widthMeasureSpec)
         setMeasuredDimension(width, keyboardHeight)
     }
 
-    // onDraw is called by Android whenever the keyboard needs to be redrawn
+    // -------------------------------------------------------
+    // DRAW
+    // -------------------------------------------------------
+
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(Color.parseColor("#1A1A2E"))
+        canvas.drawColor(Color.parseColor("#1C1C1E"))
 
         if (keyRects.isEmpty()) calculateKeyPositions()
 
         for ((key, rect) in keyRects) {
 
-            // Pick the correct background color for this key
+            // Choose background color for this key
             val brush = when {
-                key == pressedKey                                                    -> pressedPaint
-                key.output == "shift" && shiftState == 1                             -> shiftActivePaint
-                key.output == "shift" && shiftState == 2                             -> capsActivePaint
-                key.output in setOf("shift", "delete", "numbers", "enter", "space", "emoji") -> specialKeyPaint
-                else                                                                 -> keyPaint
+                key == pressedKey                        -> pressedPaint
+                key.output == "shift" && shiftState == 1 -> shiftActivePaint
+                key.output == "shift" && shiftState == 2 -> capsActivePaint
+                key.output in setOf(
+                    "shift","delete","numbers",
+                    "enter","space","emoji"
+                )                                        -> specialKeyPaint
+                else                                     -> keyPaint
             }
 
-            val cornerRadius = resources.displayMetrics.density * 5f
-            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, brush)
+            canvas.drawRoundRect(rect, 10f, 10f, brush)
 
-            // Show uppercase labels when shift or caps lock is ON
+            // Show uppercase when shift or caps is active
             val displayLabel = when {
-                shiftState > 0 && key.label.length == 1 && key.label[0].isLetter() ->
-                    key.label.uppercase()
+                shiftState > 0
+                && key.label.length == 1
+                && key.label[0].isLetter() -> key.label.uppercase()
                 else -> key.label
             }
 
-            // Keys with labels longer than 2 chars use smaller text
+            // Draw main key label — centered
             val paint = if (key.label.length > 2) smallTextPaint else textPaint
             val textY = rect.centerY() + (paint.textSize / 3f)
             canvas.drawText(displayLabel, rect.centerX(), textY, paint)
+
+            // Draw swipeUp indicator at top-left corner of key
+            // Only for keys that have a gesture
+            if (key.swipeUp.isNotEmpty()) {
+                val indicatorX = rect.left + density * 4f
+                val indicatorY = rect.top + density * 11f
+
+                // If caps active, show uppercase version of Hausa chars
+                val indicatorLabel = if (shiftState > 0) {
+                    key.swipeUp.uppercase()
+                } else {
+                    key.swipeUp
+                }
+
+                canvas.drawText(indicatorLabel, indicatorX, indicatorY, indicatorPaint)
+            }
+        }
+
+        // Draw hint bubble on top of everything else if active
+        hintKey?.let { key ->
+            hintKeyRect?.let { rect ->
+                drawHintBubble(canvas, key, rect)
+            }
         }
     }
 
-    // Calculates the pixel position and size of every key
-    // Runs once when keyboard dimensions are first known
+    // Draws the floating hint bubble above a key
+    private fun drawHintBubble(canvas: Canvas, key: Key, keyRect: RectF) {
+        val bubbleText = when {
+            key.output == "space" -> "← Flow    Base →"
+            key.swipeUp.isNotEmpty() -> {
+                val char = if (shiftState > 0) key.swipeUp.uppercase() else key.swipeUp
+                "↑  $char"
+            }
+            else -> return
+        }
+
+        val padding = density * 10f
+        val bubbleHeight = density * 36f
+
+        // Measure text width to size bubble correctly
+        val textWidth = hintTextPaint.measureText(bubbleText)
+        val bubbleWidth = textWidth + padding * 2f
+
+        // Position bubble centered above the key
+        var bubbleLeft = keyRect.centerX() - bubbleWidth / 2f
+        var bubbleTop  = keyRect.top - bubbleHeight - density * 6f
+
+        // Keep bubble inside screen horizontally
+        if (bubbleLeft < 0f) bubbleLeft = 0f
+        if (bubbleLeft + bubbleWidth > width) bubbleLeft = width - bubbleWidth
+
+        val bubbleRect = RectF(
+            bubbleLeft,
+            bubbleTop,
+            bubbleLeft + bubbleWidth,
+            bubbleTop + bubbleHeight
+        )
+
+        canvas.drawRoundRect(bubbleRect, density * 8f, density * 8f, hintBgPaint)
+
+        val textY = bubbleRect.centerY() + hintTextPaint.textSize / 3f
+        canvas.drawText(bubbleText, bubbleRect.centerX(), textY, hintTextPaint)
+    }
+
+    // Shows hint for a key and auto-dismisses after hintDurationMs
+    private fun showHint(key: Key, rect: RectF) {
+        hintHandler.removeCallbacks(dismissHintRunnable)
+        hintKey = key
+        hintKeyRect = rect
+        invalidate()
+        hintHandler.postDelayed(dismissHintRunnable, hintManager.hintDurationMs)
+    }
+
+    // -------------------------------------------------------
+    // KEY POSITION CALCULATION
+    // -------------------------------------------------------
+
     private fun calculateKeyPositions() {
         keyRects.clear()
 
-        // Gap between keys, scaled to screen density so it looks the same on all screens
-        val gap = resources.displayMetrics.density * 6f
+        val gap = density * 6f
 
-        // Row 1 (QWERTY) is the reference width — 10 keys of equal width = 10 units
-        // Row 2 (ASDFGHJKL) has 9 keys = 9 units, so we indent it by 0.5 units each side
-        // This matches the centered appearance of Gboard and SwiftKey
-        val referenceRowUnits = BaseLayer.rows[1].sumOf { it.width.toDouble() }.toFloat()
+        // Row weights control relative height of each row
+        // 0 = number row (thin)
+        // 1,2,3 = letter rows (full height)
+        // 4 = bottom row (full height)
+        val rowWeights = listOf(0.65f, 1.0f, 1.0f, 1.0f, 1.0f)
 
-        // Each row has a weight that controls its height relative to others.
-        // 0.7 = thin row (numbers and symbols)
-        // 1.0 = normal row (letters and bottom row)
-        // Row order matches BaseLayer.rows exactly:
-        // 0=numbers, 1=qwerty, 2=asdfg, 3=shift/zxcv, 4=symbols, 5=bottom
-        val rowWeights = listOf(0.7f, 1.0f, 1.0f, 1.0f, 1.0f)
-
-        // Add up all weights to know the total
         val totalWeight = rowWeights.sum()
-
-        // One unit of height in pixels
-        // All row heights are calculated from this single unit
-        val unitHeight = keyboardHeight / totalWeight
-
-        // Track vertical position as we place rows top to bottom
-        var yCursor = 0f
+        val unitHeight  = keyboardHeight / totalWeight
+        var yCursor     = 0f
 
         for ((rowIndex, row) in BaseLayer.rows.withIndex()) {
-
-            // This row's height = its weight × one unit of height
             val rowHeight = rowWeights[rowIndex] * unitHeight
-
             val rowTop    = yCursor + gap / 2f
             val rowBottom = yCursor + rowHeight - gap / 2f
 
-            val unitWidth  = width / referenceRowUnits
-
-            // Only row 2 (ASDFGHJKL) gets centered — all other rows span full width
-            // This matches Gboard and SwiftKey where only the middle letter row is indented
-            val rowIndent = if (rowIndex == 2) {
-                val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
-                ((referenceRowUnits - totalUnits) / 2f) * unitWidth
-            } else {
-                0f
-            }
-
-            var xCursor = rowIndent
+            val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
+            val unitWidth  = width / totalUnits
+            var xCursor    = 0f
 
             for (key in row) {
                 val keyWidth = key.width * unitWidth
@@ -183,13 +285,14 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    // onTouchEvent is called on every finger movement
+    // -------------------------------------------------------
+    // TOUCH HANDLING
+    // -------------------------------------------------------
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val key = getKeyAt(event.x, event.y)
 
-        // Backspace is handled entirely by BackspaceHandler
-        // We pass the event directly to it and let it manage
-        // tap vs long press logic internally
+        // Backspace has its own dedicated handler
         if (key?.output == "delete") {
             pressedKey = if (event.action == MotionEvent.ACTION_DOWN) key else null
             invalidate()
@@ -200,19 +303,79 @@ class KeyboardView(context: Context) : View(context) {
 
             MotionEvent.ACTION_DOWN -> {
                 pressedKey = key
+                gestureEngine.onTouchDown(event.x, event.y)
+
+                // Schedule long press hint after 500ms
+                if (key != null) {
+                    val rect = getRectForKey(key)
+                    if (rect != null && (key.swipeUp.isNotEmpty() || key.output == "space")) {
+                        longPressTarget = Pair(key, rect)
+                        longPressHandler.postDelayed(longPressRunnable, 500)
+                    }
+                }
+
                 invalidate()
             }
 
             MotionEvent.ACTION_UP -> {
-                if (key != null) handleKeyPress(key)
+                // Cancel any pending long press
+                longPressHandler.removeCallbacks(longPressRunnable)
+                longPressTarget = null
+
+                val direction = gestureEngine.onTouchUp(event.x, event.y)
+
+                if (key != null) {
+                    when (direction) {
+
+                        GestureDirection.NONE -> {
+                            // Normal tap
+                            handleKeyPress(key)
+
+                            // Show hint automatically for new users
+                            if (hintManager.onKeyTapped()) {
+                                val rect = getRectForKey(key)
+                                if (rect != null &&
+                                    (key.swipeUp.isNotEmpty() || key.output == "space")) {
+                                    showHint(key, rect)
+                                }
+                            }
+                        }
+
+                        GestureDirection.UP -> {
+                            // Swipe up — type the secondary character
+                            handleSwipeUp(key)
+                        }
+
+                        GestureDirection.LEFT -> {
+                            if (key.output == "space") {
+                                // TODO: Switch to Flow Layer (Phase 3)
+                            }
+                        }
+
+                        GestureDirection.RIGHT -> {
+                            if (key.output == "space") {
+                                // TODO: Switch back to Base Layer (Phase 3)
+                            }
+                        }
+
+                        GestureDirection.DOWN -> {
+                            // Reserved for future use
+                        }
+                    }
+                }
+
                 pressedKey = null
                 invalidate()
             }
         }
+
         return true
     }
 
-    // Returns whichever key the finger is currently over
+    // -------------------------------------------------------
+    // KEY LOOKUP HELPERS
+    // -------------------------------------------------------
+
     private fun getKeyAt(x: Float, y: Float): Key? {
         for ((key, rect) in keyRects) {
             if (rect.contains(x, y)) return key
@@ -220,7 +383,18 @@ class KeyboardView(context: Context) : View(context) {
         return null
     }
 
-    // Decides what to do when a key is tapped
+    private fun getRectForKey(target: Key): RectF? {
+        for ((key, rect) in keyRects) {
+            if (key === target) return rect
+        }
+        return null
+    }
+
+    // -------------------------------------------------------
+    // KEY PRESS HANDLERS
+    // -------------------------------------------------------
+
+    // Normal tap handler
     private fun handleKeyPress(key: Key) {
         val ic = ime?.currentInputConnection ?: return
 
@@ -228,13 +402,12 @@ class KeyboardView(context: Context) : View(context) {
 
             "enter" -> {
                 ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
+                ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP,   KeyEvent.KEYCODE_ENTER))
             }
 
             "space" -> ic.commitText(" ", 1)
 
             "shift" -> {
-                // Cycle: normal(0) → shift(1) → caps lock(2) → normal(0)
                 shiftState = when (shiftState) {
                     0    -> 1
                     1    -> 2
@@ -243,15 +416,12 @@ class KeyboardView(context: Context) : View(context) {
                 invalidate()
             }
 
-            // Emoji and number layers — wired up in next phase
-            "numbers" -> { }
-            "emoji"   -> { }
+            "numbers" -> { /* Phase 3 — layer switching */ }
+            "emoji"   -> { /* Future */ }
 
             else -> {
                 val output = if (shiftState > 0) key.output.uppercase() else key.output
                 ic.commitText(output, 1)
-                // After typing one letter in shift mode, go back to normal
-                // Caps lock (state 2) stays on until shift is tapped
                 if (shiftState == 1) {
                     shiftState = 0
                     invalidate()
@@ -260,7 +430,34 @@ class KeyboardView(context: Context) : View(context) {
         }
     }
 
-    // Called when keyboard dimensions change — forces key positions to recalculate
+    // Swipe-up handler — types the secondary character
+    private fun handleSwipeUp(key: Key) {
+        if (key.swipeUp.isEmpty()) return
+        val ic = ime?.currentInputConnection ?: return
+
+        // Hausa characters respect shift state
+        // Symbols stay as-is (@ is always @, # is always #)
+        val output = when {
+            key.swipeUp.length == 1 && key.swipeUp[0].isLetter() -> {
+                // It's a Hausa character — apply shift state
+                if (shiftState > 0) key.swipeUp.uppercase() else key.swipeUp
+            }
+            else -> key.swipeUp // symbol — no case change
+        }
+
+        ic.commitText(output, 1)
+
+        // Shift (state 1) turns off after one character
+        if (shiftState == 1) {
+            shiftState = 0
+            invalidate()
+        }
+    }
+
+    // -------------------------------------------------------
+    // SIZE CHANGED — recalculate on rotation or resize
+    // -------------------------------------------------------
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         keyRects.clear()
         invalidate()
