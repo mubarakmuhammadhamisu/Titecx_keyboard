@@ -38,16 +38,16 @@ class KeyboardView(context: Context) : View(context) {
     // -------------------------------------------------------
 
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#2C2C2E")
+        color = Color.parseColor("#252538") // blueprint purple — normal letter keys
     }
 
     private val specialKeyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        // Slightly lighter than normal keys for shift, delete, space, enter
-        color = Color.parseColor("#3A3A3C")
+        // Slightly lighter purple than normal keys — shift, delete, space, enter, emoji
+        color = Color.parseColor("#2E2E45")
     }
 
     private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#4C4C4E")
+        color = Color.parseColor("#4A4A6A") // lighter purple — shows which key is being touched
     }
 
     private val shiftActivePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -71,22 +71,24 @@ class KeyboardView(context: Context) : View(context) {
     }
 
     // Small indicator at top-left of each key showing swipeUp character
+    // Vivid accent purple — eye-catching enough to notice, not loud enough to distract
     private val indicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#AAAAAA") // grey — subtle, not distracting
+        color = Color.parseColor("#5E5CE6")
         textSize = density * 9f
         textAlign = Paint.Align.LEFT
     }
 
-    // Hint bubble background — semi-transparent dark
+    // Hint bubble background — vivid accent purple, clearly visible above dark keyboard
     private val hintBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#CC1C1C1E")
+        color = Color.parseColor("#5E5CE6")
     }
 
-    // Hint bubble text
+    // Hint bubble text — bold white for maximum readability inside the colored bubble
     private val hintTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textSize = density * 13f
         textAlign = Paint.Align.CENTER
+        typeface = android.graphics.Typeface.DEFAULT_BOLD
     }
 
     // -------------------------------------------------------
@@ -139,7 +141,7 @@ class KeyboardView(context: Context) : View(context) {
     // -------------------------------------------------------
 
     override fun onDraw(canvas: Canvas) {
-        canvas.drawColor(Color.parseColor("#1C1C1E"))
+        canvas.drawColor(Color.parseColor("#1A1A2E")) // blueprint dark purple background
 
         if (keyRects.isEmpty()) calculateKeyPositions()
 
@@ -157,7 +159,7 @@ class KeyboardView(context: Context) : View(context) {
                 else                                     -> keyPaint
             }
 
-            canvas.drawRoundRect(rect, 10f, 10f, brush)
+            canvas.drawRoundRect(rect, density * 5f, density * 5f, brush)
 
             // Show uppercase when shift or caps is active
             val displayLabel = when {
@@ -258,6 +260,11 @@ class KeyboardView(context: Context) : View(context) {
         // 0 = number row (thin)
         // 1,2,3 = letter rows (full height)
         // 4 = bottom row (full height)
+        // QWERTY row (index 1) has 10 equal-width keys = 10.0 units total
+        // Every row uses this same unit width so all keys align vertically
+        // This also fixes gesture accuracy — finger lift position maps to the correct key
+        val referenceRowUnits = BaseLayer.rows[1].sumOf { it.width.toDouble() }.toFloat()
+
         val rowWeights = listOf(0.65f, 1.0f, 1.0f, 1.0f, 1.0f)
 
         val totalWeight = rowWeights.sum()
@@ -269,9 +276,21 @@ class KeyboardView(context: Context) : View(context) {
             val rowTop    = yCursor + gap / 2f
             val rowBottom = yCursor + rowHeight - gap / 2f
 
-            val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
-            val unitWidth  = width / totalUnits
-            var xCursor    = 0f
+            // All rows use the same unitWidth derived from QWERTY (10 units)
+            // This keeps key widths consistent and gesture detection accurate
+            val unitWidth = width / referenceRowUnits
+
+            // Only row 2 (ASDFGHJKL — 9 keys) gets centered with indent on each side
+            // All other rows start at the left edge (xCursor = 0)
+            // This matches the centered ASDF appearance of Gboard and SwiftKey
+            val rowIndent = if (rowIndex == 2) {
+                val totalUnits = row.sumOf { it.width.toDouble() }.toFloat()
+                ((referenceRowUnits - totalUnits) / 2f) * unitWidth
+            } else {
+                0f
+            }
+
+            var xCursor = rowIndent
 
             for (key in row) {
                 val keyWidth = key.width * unitWidth
@@ -310,7 +329,7 @@ class KeyboardView(context: Context) : View(context) {
                     val rect = getRectForKey(key)
                     if (rect != null && (key.swipeUp.isNotEmpty() || key.output == "space")) {
                         longPressTarget = Pair(key, rect)
-                        longPressHandler.postDelayed(longPressRunnable, 500)
+                        longPressHandler.postDelayed(longPressRunnable, 600)
                     }
                 }
 
@@ -331,8 +350,9 @@ class KeyboardView(context: Context) : View(context) {
                             // Normal tap
                             handleKeyPress(key)
 
-                            // Show hint automatically for new users
-                            if (hintManager.onKeyTapped()) {
+                            // Show hint automatically — only for the first 20 taps on gesture keys
+                            // After that it stops forever unless the user long presses
+                            if (hintManager.onGestureKeyTapped()) {
                                 val rect = getRectForKey(key)
                                 if (rect != null &&
                                     (key.swipeUp.isNotEmpty() || key.output == "space")) {
