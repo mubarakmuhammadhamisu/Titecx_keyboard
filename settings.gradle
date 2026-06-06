@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GwaniKeyboard"
+rootProject.name = "TitecxKeyboard"
 include ':app'
