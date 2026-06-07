@@ -13,7 +13,7 @@ import android.view.View
 
 class KeyboardView(context: Context) : View(context) {
 
-    var ime: GwaniIME? = null
+    var ime: TboardIME? = null
 
     // Pixel density — used to convert dp to pixels throughout
     private val density = context.resources.displayMetrics.density

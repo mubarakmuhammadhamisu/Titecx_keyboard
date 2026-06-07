@@ -5,7 +5,7 @@ import android.inputmethodservice.InputMethodService
 import android.view.View
 import android.view.WindowManager
 
-class GwaniIME : InputMethodService() {
+class TboardIME : InputMethodService() {
 
     private lateinit var keyboardView: KeyboardView
 

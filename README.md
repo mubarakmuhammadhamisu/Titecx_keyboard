@@ -12,7 +12,7 @@ gwani-keyboard/
 ├── app/src/main/
 │   ├── AndroidManifest.xml     ← Registers keyboard with Android
 │   ├── kotlin/com/gwani/keyboard/
-│   │   ├── GwaniIME.kt         ← Entry point, Android calls this
+│   │   ├── TboardIME.kt         ← Entry point, Android calls this
 │   │   ├── KeyData.kt          ← All key definitions and layout
 │   │   └── KeyboardView.kt     ← Draws keys, handles touches
 │   └── res/

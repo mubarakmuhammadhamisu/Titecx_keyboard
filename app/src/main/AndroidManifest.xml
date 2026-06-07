@@ -11,7 +11,7 @@
             Android reads this and shows our keyboard in the system keyboard list.
         -->
         <service
-            android:name=".GwaniIME"
+            android:name=".TboardIME"
             android:label="@string/keyboard_name"
             android:permission="android.permission.BIND_INPUT_METHOD" 
             android:exported="true">
