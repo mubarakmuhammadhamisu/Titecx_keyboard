@@ -47,7 +47,7 @@ class TboardIME : InputMethodService() {
         // Portrait: 270dp gives each row comfortable breathing room
         // Landscape: 165dp keeps keyboard usable without blocking too much screen
         // topBarHeightDp is subtracted so key area shrinks when settings bar is added
-        val heightDp = (if (isLandscape) 165f else 270f) - topBarHeightDp
+        val heightDp = (if (isLandscape) 160f else 165f) - topBarHeightDp
 
         return (heightDp * density).toInt()
     }
