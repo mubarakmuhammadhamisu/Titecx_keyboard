@@ -7,7 +7,7 @@
 # The result is a downloadable APK in the Actions tab.
 # -----------------------------------------------------------
 
-name: Build Gwani Keyboard APK
+name: Build Titecx Keyboard APK
 
 # When to run this workflow
 on:
@@ -60,6 +60,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: gwani-keyboard-debug
+          name: Titecx-keyboard-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30   # keeps the APK available for 30 days
